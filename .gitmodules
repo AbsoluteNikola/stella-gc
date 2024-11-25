@@ -1,0 +1,3 @@
+[submodule "include/mlib"]
+	path = include/mlib
+	url = https://github.com/P-p-H-d/mlib.git
