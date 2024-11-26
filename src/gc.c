@@ -37,8 +37,8 @@ typedef enum GC_PHASE {
 } GC_PHASE;
 
 typedef struct gc_object_t {
-    enum COLOR color;
-    void *moved_to;
+    COLOR color;
+    struct gc_object_t *moved_to;
     stella_object obj;
 } gc_object_t;
 
@@ -299,12 +299,12 @@ void sweep_chase(gc_object_t *old_gc_obj) {
         if (q == NULL) {
             printf("Failed to allocate gc_object in sweep phase\n");
             exit(1);
-            return;
         }
         const int field_count = STELLA_OBJECT_HEADER_FIELD_COUNT(old_gc_obj->obj.object_header);
         void *r = NULL;
 
         q->moved_to = NULL;
+        q->color = WHITE;
         q->obj.object_header = old_gc_obj->obj.object_header;
         for (int i = 0; i < field_count; i++) {
             q->obj.object_fields[i] = old_gc_obj->obj.object_fields[i];
@@ -312,7 +312,7 @@ void sweep_chase(gc_object_t *old_gc_obj) {
             if (is_in_current_heap(q->obj.object_fields[i])) {
                 gc_object_t *potentially_forwarded = stella_object_to_gc_object(q->obj.object_fields[i]);
 
-                if (is_in_next_heap(potentially_forwarded->moved_to)) {
+                if (!is_in_next_heap(potentially_forwarded->moved_to)) {
                     r = potentially_forwarded;
                 }
             }
@@ -327,21 +327,31 @@ bool sweep_step() {
     if (is_empty(gc->black_queue)) {
         return true;
     }
-    gc_object_t *obj_to_move = get(gc->black_queue);
-    if (is_in_current_heap(obj_to_move)) {
+    gc_object_t *black_obj = get(gc->black_queue);
+    if (is_in_current_heap(black_obj)) {
         printf("Sweeping object: ");
-        print_stella_object(&obj_to_move->obj);
+        print_stella_object(&black_obj->obj);
         printf("\n");
-        sweep_forward(&obj_to_move->obj);
-        // to change field addresses
-        push(gc->black_queue, obj_to_move);
+        sweep_forward(&black_obj->obj);
+        push(gc->black_queue, black_obj->moved_to);
+        printf("Swept object: ");
+        print_stella_object(&black_obj->moved_to->obj);
+        printf(", from %p to %p \n", black_obj, black_obj->moved_to);
     } else {
-        int field_count = STELLA_OBJECT_HEADER_FIELD_COUNT(obj_to_move->obj.object_header);
+        // to change fields addresses
+        // obj_to_move already moved
+        printf("Swept object fields:\n object: ");
+        print_stella_object(&black_obj->obj);
+        int field_count = STELLA_OBJECT_HEADER_FIELD_COUNT(black_obj->obj.object_header);
+        printf("\n fields count: %d\n", field_count);
         for (int i = 0; i < field_count; i++) {
-            stella_object *cur_field = obj_to_move->obj.object_fields[i];
+            stella_object *cur_field = black_obj->obj.object_fields[i];
+            printf("  field %d: ", i);
+            print_stella_object(cur_field);
+            printf("\n");
             if (is_in_current_heap(cur_field)) {
                 gc_object_t *moved_field = stella_object_to_gc_object(cur_field)->moved_to;
-                obj_to_move->obj.object_fields[i] = &moved_field->obj;
+                black_obj->obj.object_fields[i] = &moved_field->obj;
             }
         }
     }
@@ -349,12 +359,13 @@ bool sweep_step() {
 }
 
 void *alloc_heap(size_t size) {
-    printf("Size to alloc %u\n", size);
+    printf("Size to alloc %u, ", size);
     void *heap = malloc(size);
     if (heap == NULL) {
         printf("Memory allocation for new heap failed!\n");
         exit(1);
     }
+    printf("heap from %p to %p \n", heap, heap + size);
     return heap;
 }
 
@@ -377,18 +388,21 @@ SWEEP_STRATEGY sweep_prepare(bool ignore_strategy) {
         case DO_NOTHING:
             break;
     }
+    printf("Sweeping strategy: %d\n", strategy);
     return strategy;
 }
 
 void sweep_cleanup() {
-    gc->current_heap = gc->sweep_helper.next_heap;
-    gc->current_heap_size = gc->sweep_helper.next_heap_size;
-    gc->next_place_in_heap = gc->sweep_helper.next;
-    gc->phase = MARK;
+    printf("Sweep cleanup\n");
+    // moving roots links
     for (int i = 0; i < gc->roots_cont; i++) {
         stella_object *current_root = *(gc->roots[i]);
         if (is_in_current_heap(current_root)) {
-            *(gc->roots[i]) = stella_object_to_gc_object(current_root)->moved_to;
+            printf("Sweeping root: ");
+            print_stella_object(current_root);
+            printf("\n from %p to %p\n", stella_object_to_gc_object(current_root), stella_object_to_gc_object(current_root)->moved_to);
+            fflush(stdout);
+            *(gc->roots[i]) = &stella_object_to_gc_object(current_root)->moved_to->obj;
         } else {
             int field_count = STELLA_OBJECT_HEADER_FIELD_COUNT(current_root->object_header);
             for (int j = 0; j < field_count; j++) {
@@ -399,6 +413,12 @@ void sweep_cleanup() {
             }
         }
     }
+    free(gc->current_heap);
+    gc->current_heap = gc->sweep_helper.next_heap;
+    gc->current_heap_size = gc->sweep_helper.next_heap_size;
+    gc->next_place_in_heap = gc->sweep_helper.next;
+    gc->phase = MARK;
+
 }
 
 gc_object_t *stella_object_to_gc_object(void *ptr) {
@@ -407,21 +427,27 @@ gc_object_t *stella_object_to_gc_object(void *ptr) {
 
 size_t get_gc_object_size(gc_object_t *obj) {
     int fields_count = STELLA_OBJECT_HEADER_FIELD_COUNT(obj->obj.object_header);
-    return sizeof(gc_object_t) + (fields_count - 1) * sizeof(void *);
+    return sizeof(gc_object_t) + fields_count * sizeof(void *);
 }
 
 void make_stella_object_grey_if_needed(stella_object *stella_obj) {
     // something predefined
+    printf("mark stella object: ");
+    print_stella_object(stella_obj);
+    printf(", ");
     if (!is_in_current_heap(stella_obj)) {
+        printf(" not in current heap\n");
         return;
     }
     gc_object_t *obj = stella_object_to_gc_object(stella_obj);
     // already traversed or marked
     if (obj->color != WHITE) {
+        printf(" already marked\n");
         return;
     }
     obj->color = GREY;
     push(gc->grey_queue, obj);
+    printf(" marked now\n");
 }
 
 void mark_roots_and_their_children() {
@@ -432,7 +458,6 @@ void mark_roots_and_their_children() {
             continue;
         }
         if (is_in_current_heap(current_root)) {
-            print_stella_object(current_root);
             fflush(stdout);
             make_stella_object_grey_if_needed(current_root);
         } else {
@@ -477,7 +502,7 @@ void gc_full() {
     sweep_prepare(true); // allocate new space
     done = sweep_step();
     while (!done) {
-        done = mark_step();
+        done = sweep_step();
     }
     sweep_cleanup();
 }
@@ -494,7 +519,6 @@ void gc_step() {
     } else {
         bool is_done = sweep_step();
         if (is_done) {
-            gc->phase = MARK;
             sweep_cleanup();
         }
     }

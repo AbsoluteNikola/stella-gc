@@ -18,7 +18,7 @@ typedef struct queue_t {
 
 // Function to create a new node
 static inline queue_node_t* create_node(void* value) {
-    queue_node_t* newNode = (queue_node_t*)malloc(sizeof(queue_node_t));
+    queue_node_t* newNode = malloc(sizeof(queue_node_t));
     if (newNode == NULL) {
         printf("Memory allocation failed!\n");
         exit(1); // Exit the program if memory allocation fails
