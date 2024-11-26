@@ -98,7 +98,7 @@ void gc_step();
 
 void gc_full();
 
-void mark_roots_and_their_children();
+void mark_roots();
 
 void make_stella_object_grey_if_needed(stella_object *stella_obj);
 
@@ -339,8 +339,8 @@ bool sweep_step() {
         printf(", from %p to %p \n", black_obj, black_obj->moved_to);
     } else {
         // to change fields addresses
-        // obj_to_move already moved
-        printf("Swept object fields:\n object: ");
+        // black_obj already moved
+        printf("Swept object fields:\n ptr: %p\n object: ", black_obj);
         print_stella_object(&black_obj->obj);
         int field_count = STELLA_OBJECT_HEADER_FIELD_COUNT(black_obj->obj.object_header);
         printf("\n fields count: %d\n", field_count);
@@ -398,24 +398,18 @@ void sweep_cleanup() {
     for (int i = 0; i < gc->roots_cont; i++) {
         stella_object *current_root = *(gc->roots[i]);
         if (is_in_current_heap(current_root)) {
-            printf("Sweeping root: ");
+            printf("Sweeping root (%d): ", i);
             print_stella_object(current_root);
             printf("\n from %p to %p\n", stella_object_to_gc_object(current_root), stella_object_to_gc_object(current_root)->moved_to);
             fflush(stdout);
             *(gc->roots[i]) = &stella_object_to_gc_object(current_root)->moved_to->obj;
-        } else {
-            int field_count = STELLA_OBJECT_HEADER_FIELD_COUNT(current_root->object_header);
-            for (int j = 0; j < field_count; j++) {
-                if (is_in_current_heap(current_root->object_fields[j])) {
-                    gc_object_t *moved_field = stella_object_to_gc_object(current_root->object_fields[j])->moved_to;
-                    current_root->object_fields[j] = &moved_field->obj;
-                }
-            }
         }
     }
     free(gc->current_heap);
     gc->current_heap = gc->sweep_helper.next_heap;
     gc->current_heap_size = gc->sweep_helper.next_heap_size;
+    gc->stats.current_allocated_bytes = 0;
+    gc->stats.current_allocated_objects = 0;
     gc->next_place_in_heap = gc->sweep_helper.next;
     gc->phase = MARK;
 
@@ -450,25 +444,13 @@ void make_stella_object_grey_if_needed(stella_object *stella_obj) {
     printf(" marked now\n");
 }
 
-void mark_roots_and_their_children() {
+void mark_roots() {
     for (int i = 0; i < gc->roots_cont; i++) {
         stella_object *current_root = *(gc->roots[i]);
         // if root is allocated we can just mark it as grey and traverse it's children later
-        if (current_root == NULL) {
-            continue;
-        }
         if (is_in_current_heap(current_root)) {
             fflush(stdout);
             make_stella_object_grey_if_needed(current_root);
-        } else {
-            // root is something already predefined
-            int fields_count = STELLA_OBJECT_HEADER_FIELD_COUNT(current_root->object_header);
-            for (int j = 0; j < fields_count; j++) {
-                print_stella_object(current_root);
-                fflush(stdout);
-                stella_object *current_field = current_root->object_fields[j];
-                make_stella_object_grey_if_needed(current_field);
-            }
         }
     }
 }
@@ -476,7 +458,7 @@ void mark_roots_and_their_children() {
 // returns true if everything marked, false otherwise
 bool mark_step() {
     if (is_empty(gc->grey_queue)) {
-        mark_roots_and_their_children();
+        mark_roots();
     }
     if (!is_empty(gc->grey_queue)) {
         gc_object_t *obj = get(gc->grey_queue);
