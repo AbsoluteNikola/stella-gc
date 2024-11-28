@@ -307,13 +307,14 @@ stella_object_1 _cls__stella_id_main = { .object_header = TAG_FN, .object_fields
 stella_object *_stella_id_main = (stella_object *)&_cls__stella_id_main;
 
 int main(int argc, char **argv) {
-  int n = 5;
+  int n = 0;
   setlocale(LC_NUMERIC, "");
-  // scanf("%d", &n);
+  scanf("%d", &n);
 #ifdef STELLA_DEBUG
   printf("[debug] input n = %d\n", n);
 #endif
   print_stella_object(_fn__stella_id_main(_stella_id_main, nat_to_stella_object(n))); printf("\n");
   print_stella_stats();
+  print_gc_alloc_stats();
   return 0;
 }

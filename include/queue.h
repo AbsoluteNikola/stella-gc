@@ -42,7 +42,9 @@ static inline queue_t* create_queue() {
 // Enqueue operation: Add an element to the rear of the queue
 static inline void push(queue_t* q, void* value) {
     queue_node_t* newNode = create_node(value);
-
+    if (value == NULL) {
+        printf("Pushed value is NULL!\n");
+    }
     if (q->rear == NULL) {
         // If the queue is empty, both front and rear should point to the new node
         q->front = q->rear = newNode;
