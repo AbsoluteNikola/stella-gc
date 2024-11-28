@@ -12,8 +12,9 @@ file(GLOB LIBRARY_SOURCES src/*.c)
 add_library(gclib ${LIBRARY_SOURCES} )
 target_include_directories(gclib PRIVATE "include")
 
-# change running file gege
+# change running file here
 add_executable(main tests/fibbonachi.c)
+
 target_include_directories(gclib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(main PRIVATE )
 target_link_libraries(main PRIVATE gclib)

@@ -13,7 +13,6 @@
 // enables a lot of debug output during gc work
 // #define STELLA_DEBUG
 
-
 typedef enum COLOR {
     WHITE,
     GREY,
